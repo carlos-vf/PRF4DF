@@ -39,20 +39,9 @@ class _tree:
 
         return last_node_left_branch, node_list
 
-############################################################
-############################################################
-############################################################
-############################################################
-############           UNSUPERVISED             ############
-############################################################
-############################################################
-############################################################
-############################################################
-
-
 
 #@jit(cache=True, nopython=True)
-def default_synthetic_data(X):
+def default_synthetic_data(X, rng): # Added rng parameter
     """
     Synthetic data with same marginal distribution for each feature
     """
@@ -63,14 +52,14 @@ def default_synthetic_data(X):
 
     for f in range(nof_features):
         feature_values = X[:, f]
-        synthetic_X[:, f] += numpy.random.choice(feature_values, nof_objects)
+        synthetic_X[:, f] += rng.choice(feature_values, nof_objects)
     return synthetic_X
 
 #@jit(cache=True, nopython=True)
-def get_synthetic_data(X, dX, py, py_remove, pnode, is_max):
+def get_synthetic_data(X, dX, py, py_remove, pnode, is_max, rng):
 
     #if (len(numpy.unique(y)) == 1):
-    #    y= numpy.zeros(len(y), dtype = int)
+    #   y= numpy.zeros(len(y), dtype = int)
 
     real_inds = numpy.where(py[:,1] == 0)[0]
     X_real = X[real_inds]
@@ -82,8 +71,8 @@ def get_synthetic_data(X, dX, py, py_remove, pnode, is_max):
     if n_real < 50:
         return X, dX, py, py_remove, pnode, is_max
 
-    X_syn  = default_synthetic_data(X_real)
-    dX_syn = default_synthetic_data(dX_real)
+    X_syn = default_synthetic_data(X_real, rng)
+    dX_syn = default_synthetic_data(dX_real, rng)
 
     X_new = numpy.vstack([X_real,X_syn])
     dX_new = numpy.vstack([dX_real,dX_syn])
@@ -102,25 +91,15 @@ def get_synthetic_data(X, dX, py, py_remove, pnode, is_max):
     return X_new, dX_new, py_new, py_new, pnode_new, is_max_new
 
 
-
-
-############################################################
-############################################################
-############################################################
-############################################################
-############               TRAIN                ############
-############################################################
-############################################################
-############################################################
-############################################################
-
-
-
 def fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, tree_max_depth, max_features, feature_importances,
-             tree_n_samples, keep_proba, unsupervised=False, new_syn_data_frac=0, min_py_sum_leaf=1):
+             tree_n_samples, keep_proba, unsupervised=False, new_syn_data_frac=0, min_py_sum_leaf=1, random_state=None):
     """
     function grows a recursive disicion tree according to the objects X and their classifications y
     """
+    if random_state is not None:
+        rng = numpy.random.default_rng(random_state)
+    else:
+        rng = numpy.random.default_rng()
 
     if len(X) == 0:
         print('Warning: empty node')
@@ -134,12 +113,12 @@ def fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, tree_max_depth, max
         if depth == 0:
             new_syn_data = True
         elif (n_objects_node > 50):
-            if (numpy.random.rand() < new_syn_data_frac):
+            if (rng.random() < new_syn_data_frac):
                 new_syn_data = True
 
         if new_syn_data:
             #print('before:', X.shape, dX.shape, py_gini.shape, py_leafs.shape, pnode.shape, is_max.shape)
-            X, dX, py_gini, py_leafs, pnode, is_max = get_synthetic_data(X, dX, py_gini, py_leafs, pnode, is_max)
+            X, dX, py_gini, py_leafs, pnode, is_max = get_synthetic_data(X, dX, py_gini, py_leafs, pnode, is_max, rng)
             #print('after:', X.shape, dX.shape, py_gini.shape, py_leafs.shape, pnode.shape, is_max.shape)
             n_objects_node = X.shape[0]
 
@@ -153,8 +132,8 @@ def fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, tree_max_depth, max
         scaled_py_gini = numpy.multiply(py_gini, pnode[:,numpy.newaxis])
 
         current_score, normalization, class_p_arr = best_split._gini_init(scaled_py_gini)
-        features_chosen_indices = m.choose_features(n_features, max_features)
-        best_gain, best_attribute, best_attribute_value = best_split.get_best_split(X, scaled_py_gini,  current_score, features_chosen_indices, max_features)
+        features_chosen_indices = m.choose_features(n_features, max_features, random_state) # Pass random_state directly
+        best_gain, best_attribute, best_attribute_value = best_split.get_best_split(X, scaled_py_gini, current_score, features_chosen_indices, max_features)
 
         # Caclculate split probabilities for each object
         if best_gain > 0:
@@ -177,8 +156,8 @@ def fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, tree_max_depth, max
 
                 # go to the next steps of the recursive process
                 depth = depth + 1
-                right_branch = fit_tree(X_right, dX_right, py_right, py_leafs_right, pnode_right, depth, is_max_right, tree_max_depth, max_features, feature_importances, tree_n_samples, keep_proba, unsupervised, new_syn_data_frac, min_py_sum_leaf)
-                left_branch  = fit_tree(X_left,  dX_left,  py_left,  py_leafs_left , pnode_left, depth, is_max_left, tree_max_depth, max_features, feature_importances, tree_n_samples, keep_proba, unsupervised, new_syn_data_frac, min_py_sum_leaf)
+                right_branch = fit_tree(X_right, dX_right, py_right, py_leafs_right, pnode_right, depth, is_max_right, tree_max_depth, max_features, feature_importances, tree_n_samples, keep_proba, unsupervised, new_syn_data_frac, min_py_sum_leaf, random_state)
+                left_branch = fit_tree(X_left, dX_left, py_left, py_leafs_left , pnode_left, depth, is_max_left, tree_max_depth, max_features, feature_importances, tree_n_samples, keep_proba, unsupervised, new_syn_data_frac, min_py_sum_leaf, random_state)
 
                 return _tree(feature_index=best_attribute, feature_threshold=best_attribute_value, true_branch=right_branch, false_branch=left_branch, p_right=pnode_right_tot)
 
@@ -186,21 +165,8 @@ def fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, tree_max_depth, max
 
     class_probas = m.return_class_probas(pnode, py_leafs)
     #if len(pnode) > 2500:
-    #    print(len(pnode), best_gain, len(pnode_right), len(pnode_left), numpy.mean(p_split_right), numpy.mean(dX[:,best_attribute]), numpy.nanmin(X[:,best_attribute]), numpy.nanmax(X[:,best_attribute]), best_attribute_value )
+    #   print(len(pnode), best_gain, len(pnode_right), len(pnode_left), numpy.mean(p_split_right), numpy.mean(dX[:,best_attribute]), numpy.nanmin(X[:,best_attribute]), numpy.nanmax(X[:,best_attribute]), best_attribute_value )
     return _tree(results= class_probas)
-
-
-
-############################################################
-############################################################
-############################################################
-############################################################
-############               PREDICT              ############
-############################################################
-############################################################
-############################################################
-############################################################
-
 
 
 

@@ -7,7 +7,7 @@ cache = True
 
 ############################################################
 ############################################################
-############ Propogate Probabilities functions  ############
+############ Propogate Probabilities functions  ############
 ############################################################
 ############################################################
 
@@ -39,7 +39,7 @@ def split_probability(value, delta, threshold):
             split_proba = GAUS[x]
     else:
         if (threshold - value) >= 0:
-        #    split_proba = 0.5
+        #   split_proba = 0.5
         #elif (threshold - value) > 0:
             split_proba = 1
         elif (threshold - value) < 0:
@@ -86,7 +86,7 @@ def return_class_probas(pnode, pY):
 
 ############################################################
 ############################################################
-############################ MISC  #########################
+############################ MISC  #########################
 ############################################################
 ############################################################
 
@@ -120,15 +120,15 @@ def get_split_objects(pnode, p_split_right, p_split_left, is_max, n_objects_node
 
     for i in range(n_objects_node):
         #if is_nan[i]:
-        #    best_right.append(i)
-        #    best_left.append(i)
-        #    if (is_max[i] == 1):
-        #        if (p_split_right_batch > p_split_left_batch):
-        #            is_max_right.append(1)
-        #            is_max_left.append(0)
-        #        else:
-        #            is_max_right.append(0)
-        #            is_max_left.append(1)
+        #   best_right.append(i)
+        #   best_left.append(i)
+        #   if (is_max[i] == 1):
+        #       if (p_split_right_batch > p_split_left_batch):
+        #           is_max_right.append(1)
+        #           is_max_left.append(0)
+        #       else:
+        #           is_max_right.append(0)
+        #           is_max_left.append(1)
         #else:
         if (p_split_right[i] >= 0.5 and is_max[i] == 1):
             best_right.append(i)
@@ -155,17 +155,21 @@ def get_split_objects(pnode, p_split_right, p_split_left, is_max, n_objects_node
     return pnode_right, pnode_left, best_right[1:], best_left[1:], is_max_right[1:], is_max_left[1:], p_split_right_batch
 
 
-#@jit(cache=True, nopython=True)
-def choose_features(nof_features, max_features):
+@jit(cache=True, nopython=True)
+def choose_features(nof_features, max_features, random_state):
     """
     function randomly selects the features that will be examined for each split
     """
     features_indices = numpy.arange(nof_features)
-    #numpy.random.seed()
-    #features_chosen = numpy.random.choice(features_indices, size=max_features, replace = True)
-    features_chosen = numpy.random.choice(features_indices, size=nof_features, replace = False)
 
-    #print(features_chosen)
+    if random_state is not None:
+        numpy.random.seed(random_state)
+
+    if max_features is None or max_features >= nof_features:
+        features_chosen = numpy.arange(nof_features)
+    else:
+        features_chosen = numpy.random.choice(features_indices, size=max_features, replace=False)
+
     return features_chosen
 
 @jit(cache=True, nopython=True)
