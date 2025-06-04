@@ -5,7 +5,7 @@ try:
 except ImportError:
     from distutils.core import setup
 
-setup(name='PRF',
+setup(name='PRF4DF',
       version='0.1dev',
       description='Probabilistic Random Forest',
       author='Itamar Reis, Dalya Baron',
