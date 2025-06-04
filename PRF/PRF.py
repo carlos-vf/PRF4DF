@@ -8,7 +8,7 @@ from . import tree
 
 ############################################################
 ############################################################
-################ DecisionTreeClassifier Class  #############
+################ DecisionTreeClassifier Class  #############
 ############################################################
 ############################################################
 
@@ -76,19 +76,16 @@ class DecisionTreeClassifier:
         self.is_node_arr_init = True
         return
 
-    def fit(self, X, pX, py):
+    def fit(self, X, dX, py):
         """
         the DecisionTreeClassifier.fit() function with a similar appearance to that of sklearn
         """
-        # Ensure n_classes_ is set, either from init or from py.shape[1]
         if self.n_classes_ is None:
             self.n_classes_ = py.shape[1]
-        # Pad py if the current fold's classes are fewer than the global n_classes_
         elif py.shape[1] < self.n_classes_:
             py_padded = numpy.zeros((py.shape[0], self.n_classes_))
             py_padded[:, :py.shape[1]] = py
             py = py_padded
-        # Raise error if py has more classes than expected (should not happen with correct setup)
         elif py.shape[1] > self.n_classes_:
             raise ValueError(f"py.shape[1] ({py.shape[1]}) is greater than self.n_classes_ ({self.n_classes_}). This indicates a class mismatch.")
 
@@ -115,7 +112,8 @@ class DecisionTreeClassifier:
             py_leafs = py_flat
         depth = 0
 
-        self.tree_ = tree.fit_tree(X, pX, py_gini, py_leafs, pnode, depth, is_max, self.max_depth, self.max_features, self.feature_importances_, self.n_samples_, self.keep_proba, self.unsupervised, self.new_syn_data_frac, self.min_py_sum_leaf, self.random_state)
+        self.tree_ = tree.fit_tree(X, dX, py_gini, py_leafs, pnode, depth, is_max, self.max_depth, self.max_features, self.feature_importances_, self.n_samples_, self.keep_proba, self.unsupervised, self.new_syn_data_frac, self.min_py_sum_leaf, self.random_state)
+
 
     def predict_proba(self, X, dX, return_leafs=False):
         """
@@ -128,13 +126,13 @@ class DecisionTreeClassifier:
 
 ############################################################
 ############################################################
-################ RandomForestClassifier Class  #############
+################ RandomForestClassifier Class  #############
 ############################################################
 ############################################################
 
 class RandomForestClassifier:
     def __init__(self, n_estimators=10, criterion='gini', max_features='auto', use_py_gini = True, use_py_leafs = True,
-                 max_depth = None, keep_proba = 0.05, bootstrap=True, new_syn_data_frac=0, min_py_sum_leaf=1, n_jobs=1, random_state=None, n_classes_=None):
+                 max_depth = None, keep_proba = 0.05, bootstrap=True, new_syn_data_frac=0, min_py_sum_leaf=1, n_jobs=1, random_state=None, n_classes_=None, n_features_=None):
         self.n_estimators_ = n_estimators
         self.criterion = criterion
         self.max_features = max_features
@@ -149,25 +147,36 @@ class RandomForestClassifier:
         self.n_jobs = n_jobs
         self.random_state = random_state
         self.n_classes_ = n_classes_
+        self.n_features_ = n_features_ 
+
 
     def check_input_X(self, X, dX):
+
+        if X is None or X.ndim != 2:
+            raise ValueError("X must be a 2D array.")
+        
+        if dX is None:
+            dX = numpy.zeros(X.shape, dtype=numpy.float64)
+        elif dX.ndim != 2:
+            raise ValueError("dX must be a 2D array or None.")
+
+        if dX.shape != X.shape:
+            raise ValueError(f"Shape of dX {dX.shape} does not match shape of X {X.shape}.")
+        
+        # Ensure the number of features matches n_features_ set during init
+        if self.n_features_ is not None and X.shape[1] != self.n_features_:
+            raise ValueError(f"Number of features in X ({X.shape[1]}) does not match n_features_ ({self.n_features_}) set at init.")
+
         # Ensure X is float and writable (create a copy if necessary)
         if not numpy.issubdtype(X.dtype, numpy.floating) or not X.flags['WRITEABLE']:
             X = X.astype(numpy.float64, copy=True) 
-        
-        if dX is None:
-            # If X is 1D, reshape X.shape to (len(X), 1) to make dX 2D
-            if X.ndim == 1:
-                dX = numpy.zeros((X.shape[0], 1))
-            else:
-                dX = numpy.zeros(X.shape)
         
         # Ensure dX is float and writable (create a copy if necessary)
         if not numpy.issubdtype(dX.dtype, numpy.floating) or not dX.flags['WRITEABLE']:
             dX = dX.astype(numpy.float64, copy=True)
 
         dX[numpy.isnan(dX)] = 0
-        X[numpy.isinf(dX)] = numpy.nan
+        X[numpy.isinf(dX)] = numpy.nan 
 
         return X, dX
 
@@ -188,33 +197,34 @@ class RandomForestClassifier:
 
         return X_chosen, pX_chosen, py_chosen
 
-    def _fit_single_tree(self, X, pX, py):
+    def _fit_single_tree(self, X, dX, py):
         tree = DecisionTreeClassifier(criterion=self.criterion,
-                                      max_features=self.max_features_num,
-                                      use_py_gini = self.use_py_gini,
-                                      use_py_leafs = self.use_py_leafs,
-                                      max_depth = self.max_depth,
-                                      keep_proba = self.keep_proba,
-                                      unsupervised = self.unsupervised,
-                                      new_syn_data_frac = self.new_syn_data_frac,
-                                      min_py_sum_leaf=self.min_py_sum_leaf,
-                                      random_state=self.random_state,
-                                      n_classes_=self.n_classes_) # Pass RF's n_classes_ to DT
+                                       max_features=self.max_features_num,
+                                       use_py_gini = self.use_py_gini,
+                                       use_py_leafs = self.use_py_leafs,
+                                       max_depth = self.max_depth,
+                                       keep_proba = self.keep_proba,
+                                       unsupervised = self.unsupervised,
+                                       new_syn_data_frac = self.new_syn_data_frac,
+                                       min_py_sum_leaf=self.min_py_sum_leaf,
+                                       random_state=self.random_state,
+                                       n_classes_=self.n_classes_)
 
         if self.bootstrap:
-            X_chosen, pX_chosen, py_chosen = self._choose_objects(X, pX, py)
-            tree.fit(X_chosen, pX_chosen, py_chosen)
+            X_chosen, dX_chosen, py_chosen = self._choose_objects(X, dX, py)
+            tree.fit(X_chosen, dX_chosen, py_chosen)
         else:
-            tree.fit(X, pX, py)
+            tree.fit(X, dX, py)
         return tree
 
     def fit(self, X, dX=None, y=None, py=None):
         """
         The RandomForestClassifier.fit() function with a similar appearance to that of sklearn
         """
-        n_features = X.shape[1]
+        if self.n_features_ is None:
+            raise ValueError("n_features_ must be provided to RandomForestClassifier during initialization.")
+
         n_objects = X.shape[0]
-        self.n_features_ = n_features
         self.feature_importances_ = numpy.zeros(self.n_features_)
 
         if self.max_features == 'auto' or self.max_features == 'sqrt':
@@ -229,13 +239,12 @@ class RandomForestClassifier:
             self.max_features_num = self.n_features_
 
         self.unsupervised = False
-        # Only determine n_classes_ if it's not already set (i.e., passed from __init__)
+        
         if self.n_classes_ is None:
             if py is not None:
                 self.n_classes_ = py.shape[1]
                 self.label_dict = {i:i for i in range(self.n_classes_)}
             elif y is not None:
-                # If py is NOT provided, but y is, convert y to py internally.
                 py, label_dict = m.get_pY(numpy.ones(len(y)), y)
                 self.n_classes_ = py.shape[1]
                 self.label_dict = label_dict
@@ -245,43 +254,32 @@ class RandomForestClassifier:
                 py[:,0] = 1
                 self.n_classes_ = 2
                 self.label_dict = {i:i for i in range(self.n_classes_)}
-        # If n_classes_ was set in __init__, and py is still None,
-        # but y is provided, we still need to create py based on the global n_classes_.
+      
         elif y is not None and py is None:
-            # Ensure m.get_pY can correctly map y to indices for self.n_classes_ columns
-            # This implicitly means y should already be 0-indexed for the global class range
             py, label_dict = m.get_pY(numpy.ones(len(y)), y)
-            # If the py generated is smaller than self.n_classes_, pad it.
             if py.shape[1] < self.n_classes_:
                 py_padded = numpy.zeros((py.shape[0], self.n_classes_))
                 py_padded[:, :py.shape[1]] = py
                 py = py_padded
             elif py.shape[1] > self.n_classes_:
                 raise ValueError(f"In RandomForestClassifier.fit: py.shape[1] ({py.shape[1]}) is greater than self.n_classes_ ({self.n_classes_}). This implies a mismatch in class definition.")
-            self.label_dict = label_dict # Update label_dict from this conversion
+            self.label_dict = label_dict
 
+        # Perform checks on X and dX, ensuring dX is created if None.
         X, dX = self.check_input_X(X, dX)
 
         if self.n_jobs == 1:
             tree_list = [self._fit_single_tree(X, dX, py) for i in range(self.n_estimators_)]
         else:
             tree_list = Parallel(n_jobs=self.n_jobs, verbose = 0)(delayed(self._fit_single_tree)
-                                                                 (X, dX, py)        for i in range(self.n_estimators_))
+                                                                (X, dX, py) for i in range(self.n_estimators_))
         self.estimators_ = []
-        for tree in tree_list:
-            self.estimators_.append(tree)
-            self.feature_importances_ += numpy.array(tree.feature_importances_)
+        for tree_estimator in tree_list:
+            self.estimators_.append(tree_estimator)
+            self.feature_importances_ += numpy.array(tree_estimator.feature_importances_)
 
         self.feature_importances_ /= self.n_estimators_
         return self
-
-    def predict_single_object(self, row):
-        # let all the trees vote
-        summed_probabilites = numpy.zeros(self.n_classes_)
-        for tree_index in range(0, self.n_estimators_):
-            y_proba_tree = self.estimators_[tree_index].predict_proba_one_object(row)
-            summed_probabilites += y_proba_tree
-        return numpy.argmax(summed_probabilites)
 
     def pick_best(self, class_proba):
         n_objects = class_proba.shape[0]
@@ -291,8 +289,8 @@ class RandomForestClassifier:
             new_class_proba[i,best_idx[i]] = class_proba[i,best_idx[i]]
         return new_class_proba
 
-    def predict_single_tree(self, predict, X, dX, out):
-        prediction = predict(X,dX)
+    def predict_single_tree(self, predict_func, X, dX, out):
+        prediction = predict_func(X,dX)
         if len(out) == 1:
             out[0] += prediction
         else:
@@ -308,7 +306,7 @@ class RandomForestClassifier:
 
         for i, tree_estimator in enumerate(self.estimators_):
             tree_estimator.node_arr_init()
-            single_tree_prediction = tree_estimator.predict_proba(X, dX)  
+            single_tree_prediction = tree_estimator.predict_proba(X, dX)
             proba += single_tree_prediction
 
         sum_rows = proba.sum(axis=1, keepdims=True)
@@ -317,10 +315,7 @@ class RandomForestClassifier:
 
     def apply(self, X, dX=None):
         X, dX = self.check_input_X(X, dX)
-        dX = numpy.zeros(X.shape) # TODO: return leafs with probabilities for PRF
-        for i, tree in enumerate(self.estimators_):
-            tree.node_arr_init()
-        leafs = [tree.predict_proba(X, dX, return_leafs=True)[:,0].reshape(-1,1) for tree in self.estimators_]
+        leafs = [tree_estimator.predict_proba(X, dX, return_leafs=True)[:,0].reshape(-1,1) for tree_estimator in self.estimators_]
         leafs = numpy.hstack(leafs).astype(int)
         return leafs
 
@@ -346,35 +341,79 @@ class RandomForestClassifier:
     def __repr__(self):
         return self.__str__()
     
+
 class SklearnCompatiblePRF(BaseEstimator, ClassifierMixin):
-    # Added n_classes_ as an explicit argument to __init__
-    def __init__(self, n_classes_=None, **prf_params):
+    
+    def __init__(self, n_classes_=None, n_features_=None, **prf_params):
         self.prf_params = prf_params
         self.prf_model = None
-        self.n_classes_ = n_classes_ # Store the global n_classes_
+        self.n_classes_ = n_classes_
+        self.n_features_ = n_features_ 
 
-    def fit(self, X, y):
-        # Ensure n_classes_ was provided during initialization
+    def fit(self, X_combined, y):
         if self.n_classes_ is None:
             raise ValueError("SklearnCompatiblePRF must be initialized with the total number of classes (n_classes_=...).")
+        if self.n_features_ is None:
+            raise ValueError("SklearnCompatiblePRF must be initialized with n_features_.")
 
-        # Pass the global n_classes_ to the RandomForestClassifier's constructor
-        self.prf_model = RandomForestClassifier(n_classes_=self.n_classes_, **self.prf_params)
+        # Calculate the total number of columns representing X_original + dX_original
+        n_X_orig_plus_dX_orig_cols = self.n_features_ * 2 
 
-        dX_for_prf = numpy.zeros(X.shape) 
-        
-        # Pass the raw y (0-indexed for the fold's classes) directly to RandomForestClassifier.fit.
-        # RandomForestClassifier's fit method will handle the conversion to py based on its fixed n_classes_.
-        self.prf_model.fit(X, dX_for_prf, y=y) 
+        # Extract the original features part
+        X_orig_features = X_combined[:, :self.n_features_]
+
+        # Extract the original uncertainties part
+        dX_orig_uncertainties = X_combined[:, self.n_features_ : n_X_orig_plus_dX_orig_cols]
+
+        # Extract DeepForest's meta-features
+        meta_features_from_deepforest = X_combined[:, n_X_orig_plus_dX_orig_cols:]
+
+        # Create uncertainty (zeros) for the meta-features
+        if meta_features_from_deepforest.shape[1] > 0:
+            dX_meta_features = numpy.zeros_like(meta_features_from_deepforest, dtype=numpy.float64)
+        else:
+            dX_meta_features = numpy.zeros((X_combined.shape[0], 0), dtype=numpy.float64)
+
+        # Construct the final X and dX arrays
+        # X_final = [Original_X_Features | DeepForest_Meta_Features]
+        # dX_final = [Original_dX_Uncertainties | Zeros_for_Meta_Features]
+        X_final_for_prf = numpy.hstack([X_orig_features, meta_features_from_deepforest])
+        dX_final_for_prf = numpy.hstack([dX_orig_uncertainties, dX_meta_features])
+
+        n_effective_features_for_prf = X_final_for_prf.shape[1]
+
+        self.prf_model = RandomForestClassifier(
+            n_classes_=self.n_classes_,
+            n_features_=n_effective_features_for_prf,
+            **self.prf_params
+        )
+
+        self.prf_model.fit(X=X_final_for_prf, dX=dX_final_for_prf, y=y) 
         
         return self
     
-    def predict_proba(self, X):
-        dX_for_prf = numpy.zeros(X.shape)
-        return self.prf_model.predict_proba(X, dX=dX_for_prf)
 
-    def predict(self, X):
-        probas = self.predict_proba(X)
-        # DeepForest (or other scikit-learn tools) might expect 0-indexed labels
-        # corresponding to the class labels passed in y_train.
+    def predict_proba(self, X_combined):
+        if self.n_features_ is None:
+            raise ValueError("SklearnCompatiblePRF must be initialized with n_features_ for prediction.")
+        
+        n_X_orig_plus_dX_orig_cols = self.n_features_ * 2 
+        
+        X_orig_features = X_combined[:, :self.n_features_]
+        dX_orig_uncertainties = X_combined[:, self.n_features_ : n_X_orig_plus_dX_orig_cols]
+        meta_features_from_deepforest = X_combined[:, n_X_orig_plus_dX_orig_cols:]
+        
+        if meta_features_from_deepforest.shape[1] > 0:
+            dX_meta_features = numpy.zeros_like(meta_features_from_deepforest, dtype=numpy.float64)
+        else:
+            dX_meta_features = numpy.zeros((X_combined.shape[0], 0), dtype=numpy.float64) 
+
+        X_final_for_prf = numpy.hstack([X_orig_features, meta_features_from_deepforest])
+        dX_final_for_prf = numpy.hstack([dX_orig_uncertainties, dX_meta_features])
+
+        return self.prf_model.predict_proba(X=X_final_for_prf, dX=dX_final_for_prf)
+
+
+    def predict(self, X_combined):
+        probas = self.predict_proba(X_combined)
         return numpy.argmax(probas, axis=1)
