@@ -10,7 +10,7 @@ setup(name='PRF4DF',
       description='Probabilistic Random Forest',
       author='Itamar Reis, Dalya Baron',
       author_email='itamarreis@mail.tau.ac.il, dalyabaron@gmail.com',
-      packages=['PRF'],
+      packages=['PRF4DF'],
       zip_safe=False,
       install_requires=['numpy', 'scipy',
                       'numba', 'joblib']
