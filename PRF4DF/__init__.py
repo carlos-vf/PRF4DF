@@ -1,2 +1,2 @@
 from .PRF import RandomForestClassifier as prf
-from .PRF import SklearnCompatiblePRF
+from .sklearnCompatiblePRF import SklearnCompatiblePRF

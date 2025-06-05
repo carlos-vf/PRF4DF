@@ -1,7 +1,5 @@
 import numpy
 from joblib import Parallel, delayed
-import threading
-from sklearn.base import BaseEstimator, ClassifierMixin
 
 from . import misc_functions as m
 from . import tree
@@ -151,32 +149,31 @@ class RandomForestClassifier:
 
 
     def check_input_X(self, X, dX):
-
         if X is None or X.ndim != 2:
             raise ValueError("X must be a 2D array.")
-        
+            
         if dX is None:
-            dX = numpy.zeros(X.shape, dtype=numpy.float64)
+            dX = numpy.zeros(X.shape)
         elif dX.ndim != 2:
             raise ValueError("dX must be a 2D array or None.")
 
-        if dX.shape != X.shape:
+        if dX.shape[1] > 0 and dX.shape != X.shape:
             raise ValueError(f"Shape of dX {dX.shape} does not match shape of X {X.shape}.")
-        
+            
         # Ensure the number of features matches n_features_ set during init
         if self.n_features_ is not None and X.shape[1] != self.n_features_:
             raise ValueError(f"Number of features in X ({X.shape[1]}) does not match n_features_ ({self.n_features_}) set at init.")
 
         # Ensure X is float and writable (create a copy if necessary)
         if not numpy.issubdtype(X.dtype, numpy.floating) or not X.flags['WRITEABLE']:
-            X = X.astype(numpy.float64, copy=True) 
-        
+            X = X.astype(numpy.float64, copy=True)    
+            
         # Ensure dX is float and writable (create a copy if necessary)
         if not numpy.issubdtype(dX.dtype, numpy.floating) or not dX.flags['WRITEABLE']:
             dX = dX.astype(numpy.float64, copy=True)
 
         dX[numpy.isnan(dX)] = 0
-        X[numpy.isinf(dX)] = numpy.nan 
+        X[numpy.isinf(dX)] = numpy.nan
 
         return X, dX
 
@@ -341,79 +338,3 @@ class RandomForestClassifier:
     def __repr__(self):
         return self.__str__()
     
-
-class SklearnCompatiblePRF(BaseEstimator, ClassifierMixin):
-    
-    def __init__(self, n_classes_=None, n_features_=None, **prf_params):
-        self.prf_params = prf_params
-        self.prf_model = None
-        self.n_classes_ = n_classes_
-        self.n_features_ = n_features_ 
-
-    def fit(self, X_combined, y):
-        if self.n_classes_ is None:
-            raise ValueError("SklearnCompatiblePRF must be initialized with the total number of classes (n_classes_=...).")
-        if self.n_features_ is None:
-            raise ValueError("SklearnCompatiblePRF must be initialized with n_features_.")
-
-        # Calculate the total number of columns representing X_original + dX_original
-        n_X_orig_plus_dX_orig_cols = self.n_features_ * 2 
-
-        # Extract the original features part
-        X_orig_features = X_combined[:, :self.n_features_]
-
-        # Extract the original uncertainties part
-        dX_orig_uncertainties = X_combined[:, self.n_features_ : n_X_orig_plus_dX_orig_cols]
-
-        # Extract DeepForest's meta-features
-        meta_features_from_deepforest = X_combined[:, n_X_orig_plus_dX_orig_cols:]
-
-        # Create uncertainty (zeros) for the meta-features
-        if meta_features_from_deepforest.shape[1] > 0:
-            dX_meta_features = numpy.zeros_like(meta_features_from_deepforest, dtype=numpy.float64)
-        else:
-            dX_meta_features = numpy.zeros((X_combined.shape[0], 0), dtype=numpy.float64)
-
-        # Construct the final X and dX arrays
-        # X_final = [Original_X_Features | DeepForest_Meta_Features]
-        # dX_final = [Original_dX_Uncertainties | Zeros_for_Meta_Features]
-        X_final_for_prf = numpy.hstack([X_orig_features, meta_features_from_deepforest])
-        dX_final_for_prf = numpy.hstack([dX_orig_uncertainties, dX_meta_features])
-
-        n_effective_features_for_prf = X_final_for_prf.shape[1]
-
-        self.prf_model = RandomForestClassifier(
-            n_classes_=self.n_classes_,
-            n_features_=n_effective_features_for_prf,
-            **self.prf_params
-        )
-
-        self.prf_model.fit(X=X_final_for_prf, dX=dX_final_for_prf, y=y) 
-        
-        return self
-    
-
-    def predict_proba(self, X_combined):
-        if self.n_features_ is None:
-            raise ValueError("SklearnCompatiblePRF must be initialized with n_features_ for prediction.")
-        
-        n_X_orig_plus_dX_orig_cols = self.n_features_ * 2 
-        
-        X_orig_features = X_combined[:, :self.n_features_]
-        dX_orig_uncertainties = X_combined[:, self.n_features_ : n_X_orig_plus_dX_orig_cols]
-        meta_features_from_deepforest = X_combined[:, n_X_orig_plus_dX_orig_cols:]
-        
-        if meta_features_from_deepforest.shape[1] > 0:
-            dX_meta_features = numpy.zeros_like(meta_features_from_deepforest, dtype=numpy.float64)
-        else:
-            dX_meta_features = numpy.zeros((X_combined.shape[0], 0), dtype=numpy.float64) 
-
-        X_final_for_prf = numpy.hstack([X_orig_features, meta_features_from_deepforest])
-        dX_final_for_prf = numpy.hstack([dX_orig_uncertainties, dX_meta_features])
-
-        return self.prf_model.predict_proba(X=X_final_for_prf, dX=dX_final_for_prf)
-
-
-    def predict(self, X_combined):
-        probas = self.predict_proba(X_combined)
-        return numpy.argmax(probas, axis=1)
