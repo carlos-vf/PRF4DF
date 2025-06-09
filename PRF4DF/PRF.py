@@ -219,8 +219,11 @@ class RandomForestClassifier:
         The RandomForestClassifier.fit() function with a similar appearance to that of sklearn
         """
         if self.n_features_ is None:
-            raise ValueError("n_features_ must be provided to RandomForestClassifier during initialization.")
-
+            if X is not None:
+                self.n_features_ = X.shape[1]
+            else:
+                raise ValueError("n_features_ must be provided to RandomForestClassifier during initialization or inferrable from X.")
+        
         n_objects = X.shape[0]
         self.feature_importances_ = numpy.zeros(self.n_features_)
 
@@ -268,8 +271,9 @@ class RandomForestClassifier:
         if self.n_jobs == 1:
             tree_list = [self._fit_single_tree(X, dX, py) for i in range(self.n_estimators_)]
         else:
-            tree_list = Parallel(n_jobs=self.n_jobs, verbose = 0)(delayed(self._fit_single_tree)
-                                                                (X, dX, py) for i in range(self.n_estimators_))
+            tree_list = Parallel(n_jobs=self.n_jobs, verbose=0)(delayed(self._fit_single_tree)
+                                                               (X, dX, py) for i in range(self.n_estimators_))
+        
         self.estimators_ = []
         for tree_estimator in tree_list:
             self.estimators_.append(tree_estimator)
@@ -308,7 +312,38 @@ class RandomForestClassifier:
 
         sum_rows = proba.sum(axis=1, keepdims=True)
         proba = numpy.where(sum_rows == 0, 0, proba / sum_rows)
-        return proba 
+        return proba
+
+
+    def predict_proba_with_dX(self, X, dX=None):
+        """
+        Predicts class probabilities and their standard deviation across the trees.
+        """
+        X, dX = self.check_input_X(X, dX)
+
+        # Collect predictions from each tree in the forest
+        all_tree_predictions = []
+        for tree_estimator in self.estimators_:
+            tree_estimator.node_arr_init()
+            # Pass dX to each tree's prediction method
+            single_tree_prediction = tree_estimator.predict_proba(X, dX)
+            all_tree_predictions.append(single_tree_prediction)
+            
+        # Stack predictions into a 3D array: (n_estimators, n_samples, n_classes)
+        predictions_array = numpy.array(all_tree_predictions)
+        
+        # Calculate mean and standard deviation along the 'n_estimators' axis (axis=0)
+        mean_probas = numpy.mean(predictions_array, axis=0)
+        #dX_probas = numpy.std(predictions_array, axis=0)
+        std_probas = numpy.std(predictions_array, axis=0)
+        sem_probas = std_probas / numpy.sqrt(self.n_estimators_)
+
+        # Normalize the mean probabilities so they sum to 1
+        sum_rows = mean_probas.sum(axis=1, keepdims=True)
+        mean_probas = numpy.where(sum_rows == 0, 0, mean_probas / sum_rows)
+        
+        return mean_probas, sem_probas
+     
 
     def apply(self, X, dX=None):
         X, dX = self.check_input_X(X, dX)
