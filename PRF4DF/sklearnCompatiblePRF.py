@@ -13,13 +13,16 @@ class SklearnCompatiblePRF(BaseEstimator, ClassifierMixin):
         self.use_probabilistic_labels = use_probabilistic_labels
         self.use_feature_uncertainties = use_feature_uncertainties
 
-    def fit(self, X, y, dX=None, sample_weight=None):
+    def fit(self, X, y, dX=None, py=None, sample_weight=None):
         # Your custom unpacking logic from the original file seems to handle X and X_dX (dX)
         # being passed together. To simplify and align with the framework, it's better to
         # expect X and X_dX as separate arguments. Here we adapt the existing fit method.
         
         if self.n_classes_ is None:
-            self.n_classes_ = len(numpy.unique(y))
+            if py is not None:
+                self.n_classes_ = py.shape[1]
+            else:
+                self.n_classes_ = len(numpy.unique(y))
         
         n_features_for_prf = X.shape[1]
 
@@ -31,7 +34,7 @@ class SklearnCompatiblePRF(BaseEstimator, ClassifierMixin):
         )
         
         # Fit the underlying PRF model, passing the separated X and X_dX
-        self.prf_model.fit(X=X, y=y, dX=dX)
+        self.prf_model.fit(X=X, y=y, dX=dX, py=py)
 
         return self
 
